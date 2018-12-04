@@ -58,6 +58,7 @@ int  parse_record_clf(char *);
 int  parse_record_ftp(char *);
 int  parse_record_squid(char *);
 int  parse_record_w3c(char *);
+int  parse_record_alb(char *);
 
 /*********************************************/
 /* FMT_LOGREC - terminate log fields w/zeros */
@@ -102,6 +103,7 @@ int parse_record(char *buffer)
       case LOG_FTP:   return parse_record_ftp(buffer);   break; /* ftp   */
       case LOG_SQUID: return parse_record_squid(buffer); break; /* squid */
       case LOG_W3C:   return parse_record_w3c(buffer);   break; /* w3c   */
+      case LOG_ALB:   return parse_record_alb(buffer);   break; /* alb   */
    }
 }
 
@@ -736,5 +738,158 @@ int parse_record_w3c(char *buffer)
    local_time = localtime(&timestamp);                 /* update tm struct  */
    strftime(log_rec.datetime, sizeof(log_rec.datetime),/* and format sting  */
      "[%d/%b/%Y:%H:%M:%S -0000]", local_time);         /* for log_rec field */
+   return 1;
+}
+
+/*********************************************/
+/* PARSE_RECORD_ALB - AWS ALB log handler    */
+/*********************************************/
+
+// Log input format: type ts elv client:port target:port request_proc_time target_proc_time response_proc_time elb_status_code target_status_code in_bytes out_bytes "request" "user_agent" ssl_cipher ssl_protocol target_group_arn "trace_id" "cert_arn" rule_prio request_time "actions" "redirect_url" "error"
+int parse_record_alb(char *buffer)
+{
+   int size;
+   char *cp1, *cp2, *cp3, *cpx, *eob, *eos;
+   struct tm gm_time;
+
+   size = strlen(buffer);                 /* get length of buffer        */
+   eob = buffer+size;                     /* calculate end of buffer     */
+   fmt_logrec(buffer);                    /* separate fields with \0's   */
+
+   cp1=buffer;
+
+   /* skip field (type) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* date/time */
+   cp1=strptime(cp1, "%Y-%m-%dT%T", &gm_time);
+   if (cp1 == NULL) 
+   {
+      return 1;
+   }
+   strftime(log_rec.datetime, sizeof(log_rec.datetime), "[%d/%b/%Y:%H:%M:%S -0000]", &gm_time);
+   while (*cp1 != '\0') cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (elbid) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (client:port) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (target:port) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (request_processing_time) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (target_processing_time) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (response_processing_time) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* response code */
+   log_rec.resp_code = atoi(cp1);
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (target_status_code) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (received_byes) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* xfer size */
+   if (*cp1<'0'||*cp1>'9') log_rec.xfer_size=0;
+   else log_rec.xfer_size = strtoul(cp1,NULL,10);
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* HTTP request */
+   cpx = cp1;
+   cp2 = log_rec.url;
+   eos = (cp1+MAXURL-1);
+   if (eos >= eob) eos = eob-1;
+
+   /* get verb */
+   while ( (*cp1 != '\0') && (*cp1 != ' ') && (cp1 != eos) ) *cp2++ = *cp1++;
+   *cp2++ = ' ';
+
+   /* skip protocol */
+   while ( (*cp1 != '\0') && (*cp1 != ':') && (cp1 != eos) ) cp1++;
+   cp1++;
+   cp1++;
+   cp1++;
+
+   /* hostname from url */
+   cp3=log_rec.hostname;
+   while ( (*cp1 != '\0') && (*cp1 != '/') && (*cp1 != ':') && (cp1 != eos) ) *cp3++ = *cp1++;
+   *cp3 = '\0';
+
+   if (*cp1 != '/')
+   {
+      while ( (*cp1 != '\0') && (*cp1 != '/') && (cp1 != eos) ) cp1++;
+   }
+   
+   /* skip to uri */
+   while ( (*cp1 != '\0') && (*cp1 != '/') && (cp1 != eos) ) cp1++;
+
+   while ( (*cp1 != '\0') && (cp1 != eos) ) *cp2++ = *cp1++;
+   *cp2 = '\0';
+   if (*cp1 != '\0')
+   {
+      while (*cp1 != '\0') cp1++;
+   }
+   if (cp1 < eob) cp1++;
+
+   if ( (log_rec.url[0] != '"') ||
+        (cp1 >= eob) ) return 0;
+
+   /* Strip off HTTP version from URL */
+   if ( (cp2=strstr(log_rec.url,"HTTP"))!=NULL )
+   {
+      *cp2='\0';          /* Terminate string */
+      *(--cp2)='"';       /* change <sp> to " */
+   }
+
+   /* user agent */
+   cp2 = log_rec.agent;
+   eos = cp1+(MAXAGENT-1);
+   if (eos >= eob) eos = eob-1;
+
+   while ( (*cp1 != '\0') && (cp1 != eos) ) *cp2++ = *cp1++;
+   *cp2 = '\0';
+   if (eos >= eob) eos = eob-1;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (ssl_cipher) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (ssl_protocol) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (target_group_arn) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   /* skip field (trace_id) */
+   while ( (*cp1 != '\0') && (cp1 < eob) ) cp1++;
+   if (cp1 < eob) cp1++;
+
+   // fprintf(stderr, "host: %s\n", log_rec.hostname);
+
+   if (cp1 < eob) cp1++;
    return 1;
 }

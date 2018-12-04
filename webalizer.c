@@ -337,7 +337,8 @@ int main(int argc, char *argv[])
         case 'F': log_type=(tolower(optarg[0])=='f')?
                    LOG_FTP:(tolower(optarg[0])=='s')?
                    LOG_SQUID:(tolower(optarg[0])=='w')?
-                   LOG_W3C:LOG_CLF;          break;  /* define log type     */
+                   LOG_W3C:(tolower(optarg[0])=='a')?
+                   LOG_ALB:LOG_CLF;          break;  /* define log type     */
 	case 'g': group_domains=atoi(optarg); break; /* GroupDomains (0=no) */
         case 'G': hourly_graph=0;            break;  /* no hourly graph     */
         case 'h': print_opts(argv[0]);       break;  /* help                */
@@ -404,7 +405,7 @@ int main(int argc, char *argv[])
 
    if (page_type==NULL)                  /* check if page types present     */
    {
-      if ((log_type==LOG_CLF)||(log_type==LOG_SQUID)||(log_type==LOG_W3C))
+      if ((log_type==LOG_CLF)||(log_type==LOG_SQUID)||(log_type==LOG_W3C)||(log_type==LOG_ALB))
       {
          add_nlist("htm*"  ,&page_type); /* if no page types specified, we  */
          add_nlist("cgi"   ,&page_type); /* use the default ones here...    */
@@ -543,6 +544,7 @@ int main(int argc, char *argv[])
          case LOG_FTP:   printf("ftp)\n");   break;
          case LOG_SQUID: printf("squid)\n"); break;
          case LOG_W3C:   printf("w3c)\n");   break;
+         case LOG_ALB:   printf("alb)\n");   break;
       }
    }
 
@@ -1756,7 +1758,8 @@ void get_config(char *fname)
         case 60: log_type=(tolower(value[0])=='f')?
                  LOG_FTP:((tolower(value[0])=='s')?
                  LOG_SQUID:((tolower(value[0])=='w')?
-                 LOG_W3C:LOG_CLF));                break; /* LogType        */
+                 LOG_W3C:((tolower(value[0])=='a')?
+                 LOG_ALB:LOG_CLF)));               break; /* LogType        */
         case 61: add_glist(value,&search_list);    break; /* SearchEngine   */
         case 62: group_domains=atoi(value);        break; /* GroupDomains   */
         case 63: hide_sites=

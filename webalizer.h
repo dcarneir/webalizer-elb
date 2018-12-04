@@ -36,6 +36,7 @@
 #define LOG_FTP   1                    /* wu-ftpd xferlog type             */
 #define LOG_SQUID 2                    /* squid proxy log                  */
 #define LOG_W3C   3                    /* W3C extended log format          */
+#define LOG_ALB   4                    /* AWS ALB log format               */
 
 /* compression */
 #define COMP_NONE 0

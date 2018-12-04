@@ -1,0 +1,9 @@
+*.o
+.vscode
+Makefile
+config.log
+config.status
+webalizer_lang.h
+wcmgr
+webalizer
+webazolver
